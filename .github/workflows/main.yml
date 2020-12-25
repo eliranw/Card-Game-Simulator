@@ -1,4 +1,4 @@
-name: Build and Release CGS
+name: Build and Release 
 on:
   push: { branches: [develop, main] }
   release: { types: [published] }
@@ -14,139 +14,79 @@ jobs:
       fail-fast: false
       matrix:
         targetPlatform:
-          - Android
           - iOS
-          - StandaloneOSX
-#          - StandaloneLinux64
-#          - WebGL
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout to current repo including Github-LFS Items (audio samples, videos, datasets, and graphics)
+        uses: actions/checkout@v2
         with:
           lfs: true
-      - uses: actions/cache@v2
+      - name: Cache Library as artifact to improve workflow execution time
+        uses: actions/cache@v2
         with:
           path: Library
           key: Library-${{ matrix.targetPlatform }}
           restore-keys: Library-
-      - name: free disk space
-        run: |
-          sudo swapoff -a
-          sudo rm -f /swapfile
-          sudo apt clean
-          docker rmi $(docker image ls -aq)
-          df -h
-      - uses: webbertakken/unity-builder@v2.0-aplha-5
+      - uses: game-ci/unity-builder@v2.0-aplha-5
         with:
           unityVersion: 2019.4.15f1
           targetPlatform: ${{ matrix.targetPlatform }}
-          buildsPath: builds         
-          buildMethod: Cgs.Editor.BuildCgs.BuildOptions
-          androidAppBundle: true
-          androidKeystoreName: finoldigital.keystore
-          androidKeystoreBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          androidKeystorePass: ${{ secrets.ANDROID_KEYSTORE_PASS }}
-          androidKeyaliasName: ${{ secrets.ANDROID_KEYALIAS_NAME }}
-          androidKeyaliasPass: ${{ secrets.ANDROID_KEYALIAS_PASS }}
+          buildsPath: builds
       - uses: actions/upload-artifact@v2
         if: github.event.ref != 'refs/heads/develop'
         with:
           name: cgs-android-ios-mac-linux
           path: builds
-  buildAndReleaseWindows:
-    name: Build and Release to the Microsoft Store
-    runs-on: windows-latest
-    needs: buildForSomePlatforms
-#    if: github.event.ref != 'refs/heads/develop'
-    if: false
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
-        with:
-          lfs: true
-      - name: Install Unity
-        uses: crazy-max/ghaction-chocolatey@v1.2.2
-        with:
-          args: install --yes unity --version=2019.4.15 unity-il2cpp --version=2019.4.15 unity-win-il2cpp --version=2019.4.15 unity-metro --version=2019.4.15
-      - name: Build Cgs for Windows
-        run: .\build_windows.ps1
-        shell: powershell
-        env:
-          UnityPath: C:\Program Files\Unity\Editor\Unity.exe
-          UnityUsername: ${{ secrets.UNITY_EMAIL }}
-          UnityPassword: ${{ secrets.UNITY_PASSWORD }}
-          UnitySerial: ${{ secrets.UNITY_SERIAL }}
-      - name: Setup MSBuild.exe
-        uses: microsoft/setup-msbuild@v1.0.1
-      - name: Restore the Wpf application to populate the obj folder
-        run: msbuild $env:SolutionPath /t:Restore /p:Configuration=$env:Configuration /p:RuntimeIdentifier=$env:RuntimeIdentifier
-        env:
-          SolutionPath: build\uwp\Card Game Simulator.sln
-          Configuration: Master
-          RuntimeIdentifier: win-x64
-      - name: Create .appxupload
-        run: msbuild $env:SolutionPath /p:Configuration=$env:Configuration /p:Platform=$env:TargetPlatform /p:UapAppxPackageBuildMode=$env:BuildMode /p:AppxBundle=$env:AppxBundle
-        env:
-          SolutionPath: build\uwp\Card Game Simulator.sln
-          Configuration: Master
-          TargetPlatform: x64
-          BuildMode: StoreUpload
-          AppxBundle: Always
-      - name: Upload builds
-        uses: actions/upload-artifact@v2
-        if: github.event.ref != 'refs/heads/develop'
-        with:
-          name: cgs-windows
-          path: builds
-  releaseToAppStore:
-    name: Release to Google Play and the App Store
-    runs-on: macos-latest
-    needs: buildForSomePlatforms
-    if: github.event.action == 'published'
-    env:
-      APPLE_CONNECT_EMAIL: ${{ secrets.APPLE_CONNECT_EMAIL }}
-      APPLE_DEVELOPER_EMAIL: ${{ secrets.APPLE_DEVELOPER_EMAIL }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_TEAM_NAME: ${{ secrets.APPLE_TEAM_NAME }}
-      FASTLANE_PASSWORD: ${{ secrets.FASTLANE_PASSWORD }}
-      GOOGLE_PLAY_KEY_FILE: ${{ secrets.GOOGLE_PLAY_KEY_FILE }}
-      MAC_APPLICATION_CERTIFICATE: ${{ secrets.MAC_APPLICATION_CERTIFICATE }}
-      MAC_APPLICATION_PASSWORD: ${{ secrets.MAC_APPLICATION_PASSWORD }}
-      MAC_INSTALLER_CERTIFICATE: ${{ secrets.MAC_INSTALLER_CERTIFICATE }}
-      MAC_INSTALLER_PASSWORD: ${{ secrets.MAC_INSTALLER_PASSWORD }}
-      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-      MATCH_PERSONAL_ACCESS_TOKEN: ${{ secrets.MATCH_PERSONAL_ACCESS_TOKEN }}
-      MATCH_URL: ${{ secrets.MATCH_URL }}
-      BUILDS_PATH: ${{ format('{0}/builds', github.workspace) }}
-      GOOGLE_PLAY_KEY_FILE_PATH: ${{ format('{0}/fastlane/api-finoldigital.json', github.workspace) }}
-      ANDROID_PACKAGE_NAME: com.finoldigital.cardgamesim
-      IOS_APP_ID: com.finoldigital.CardGameSim
-      MAC_APP_ID: com.finoldigital.CardGameSimulator
-      PROJECT_NAME: Card Game Simulator
-      RELEASE_NOTES: ${{ github.event.release.body }}
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          lfs: true
-      - uses: actions/download-artifact@v1
-        with:
-          name: cgs-android-ios-mac-linux
-          path: builds
-      - uses: maierj/fastlane-action@v1.4.0
-        with:
-          lane: 'fixversion'
-      - name: Prepare for upload
-        run: |
-          echo "$GOOGLE_PLAY_KEY_FILE" > $GOOGLE_PLAY_KEY_FILE_PATH
-          echo "$RELEASE_NOTES" > fastlane/metadata/android/en-US/changelogs/default.txt
-          find $BUILDS_PATH -type f -iname "*.sh" -exec chmod +x {} \;
-          chmod +x fastlane/sign-osx-build.sh
-          ./fastlane/sign-osx-build.sh
-      - uses: maierj/fastlane-action@v1.4.0
-        with:
-          lane: 'android playstore'
-      - uses: maierj/fastlane-action@v1.4.0
-        with:
-          lane: 'ios release'
-      - uses: maierj/fastlane-action@v1.4.0
-        with:
-          lane: 'mac macupload'
+# # CD to app store 
+#   releaseToAppStore:
+#     name: Release to Google Play and the App Store
+#     runs-on: macos-latest
+#     needs: buildForSomePlatforms
+#     if: github.event.action == 'published'
+#     env:
+#       APPLE_CONNECT_EMAIL: ${{ secrets.APPLE_CONNECT_EMAIL }}
+#       APPLE_DEVELOPER_EMAIL: ${{ secrets.APPLE_DEVELOPER_EMAIL }}
+#       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+#       APPLE_TEAM_NAME: ${{ secrets.APPLE_TEAM_NAME }}
+#       FASTLANE_PASSWORD: ${{ secrets.FASTLANE_PASSWORD }}
+#       GOOGLE_PLAY_KEY_FILE: ${{ secrets.GOOGLE_PLAY_KEY_FILE }}
+#       MAC_APPLICATION_CERTIFICATE: ${{ secrets.MAC_APPLICATION_CERTIFICATE }}
+#       MAC_APPLICATION_PASSWORD: ${{ secrets.MAC_APPLICATION_PASSWORD }}
+#       MAC_INSTALLER_CERTIFICATE: ${{ secrets.MAC_INSTALLER_CERTIFICATE }}
+#       MAC_INSTALLER_PASSWORD: ${{ secrets.MAC_INSTALLER_PASSWORD }}
+#       MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+#       MATCH_PERSONAL_ACCESS_TOKEN: ${{ secrets.MATCH_PERSONAL_ACCESS_TOKEN }}
+#       MATCH_URL: ${{ secrets.MATCH_URL }}
+#       BUILDS_PATH: ${{ format('{0}/builds', github.workspace) }}
+#       GOOGLE_PLAY_KEY_FILE_PATH: ${{ format('{0}/fastlane/api-finoldigital.json', github.workspace) }}
+#       ANDROID_PACKAGE_NAME: com.finoldigital.cardgamesim
+#       IOS_APP_ID: com.finoldigital.CardGameSim
+#       MAC_APP_ID: com.finoldigital.CardGameSimulator
+#       PROJECT_NAME: Card Game Simulator
+#       RELEASE_NOTES: ${{ github.event.release.body }}
+#     steps:
+#       - uses: actions/checkout@v2
+#         with:
+#           lfs: true
+#       - uses: actions/download-artifact@v1
+#         with:
+#           name: cgs-android-ios-mac-linux
+#           path: builds
+#       - uses: maierj/fastlane-action@v1.4.0
+#         with:
+#           lane: 'fixversion'
+#       - name: Prepare for upload
+#         run: |
+#           echo "$GOOGLE_PLAY_KEY_FILE" > $GOOGLE_PLAY_KEY_FILE_PATH
+#           echo "$RELEASE_NOTES" > fastlane/metadata/android/en-US/changelogs/default.txt
+#           find $BUILDS_PATH -type f -iname "*.sh" -exec chmod +x {} \;
+#           chmod +x fastlane/sign-osx-build.sh
+#           ./fastlane/sign-osx-build.sh
+#       - uses: maierj/fastlane-action@v1.4.0
+#         with:
+#           lane: 'android playstore'
+#       - uses: maierj/fastlane-action@v1.4.0
+#         with:
+#           lane: 'ios release'
+#       - uses: maierj/fastlane-action@v1.4.0
+#         with:
+#           lane: 'mac macupload'
