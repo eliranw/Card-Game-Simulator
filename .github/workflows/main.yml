@@ -31,7 +31,7 @@ jobs:
           targetPlatform: ${{ matrix.targetPlatform }}
           buildsPath: builds
       - uses: actions/upload-artifact@v2
-        if: github.event.ref != 'refs/heads/develop'
+#        if: github.event.ref != 'refs/heads/develop'
         with:
           name: cgs-android-ios-mac-linux
           path: builds
