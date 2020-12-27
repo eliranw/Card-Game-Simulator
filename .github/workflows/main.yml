@@ -27,8 +27,6 @@ jobs:
           restore-keys: Library-
       - uses: game-ci/unity-builder@v1.5
         with:
-          versioning: Custom
-          version: 1.1.1
           unityVersion: 2019.4.15f1
           targetPlatform: ${{ matrix.targetPlatform }}
           buildsPath: builds
